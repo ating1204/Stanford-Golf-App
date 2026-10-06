@@ -44,3 +44,9 @@ build/
 .vscode/
 .DS_Store
 
+### vibewise ###
+.vibe-wise/
+
+
+### claude ###
+.claude/settings.local.json:

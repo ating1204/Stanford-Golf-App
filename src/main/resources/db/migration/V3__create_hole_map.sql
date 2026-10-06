@@ -1,4 +1,5 @@
 -- aerial image of each hole for every course & the geographic bounds of that image (bounded by nw and se).
+/* OUTDATED, CHECK V5 FOR NEWER VERSION */
 CREATE TABLE hole_map (
     hole_id        bigint PRIMARY KEY REFERENCES hole(id) ON DELETE CASCADE,
     image_path     text NOT NULL,              -- e.g. /maps/stanford/hole01.png (served from static/)
