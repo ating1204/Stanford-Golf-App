@@ -7,18 +7,19 @@ import jakarta.persistence.Id;
 
 @Entity
 public class Hole {
-
+    /* fields */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
     private Long courseId;      
     private Integer holeNumber; 
     private Integer par;
 
+    /* empty constructor */
     public Hole() {
     }
 
+    /* getters */
     public Long getId() {
         return id;
     }
@@ -34,4 +35,5 @@ public class Hole {
     public Integer getPar() {
         return par;
     }
+    
 }
