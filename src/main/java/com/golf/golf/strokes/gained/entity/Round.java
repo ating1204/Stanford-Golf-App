@@ -2,6 +2,7 @@ package com.golf.golf.strokes.gained.entity;
 
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -21,6 +22,10 @@ public class Round {
     private Integer totalScore;
     private LocalDate playedOn;
     private String holes;
+    
+    // made by the phone; same id on every retry of an upload
+    // deals w/ communication prob btwn client and server
+    private UUID clientId;
 
     /* empty constructor */
     public Round() {
@@ -45,6 +50,9 @@ public class Round {
     public String getHoles() {
         return holes;
     }
+    public UUID getClientId() {
+        return clientId;
+    }
     /* setters */
     public void setTee(String tee) {
         this.tee = tee;
@@ -55,7 +63,8 @@ public class Round {
     public void setHoles(String holes) {
         this.holes = holes;
     }
-    public Round(Long courseId, String tee, LocalDate playedOn, String holes) {
+    public Round(UUID clientId, Long courseId, String tee, LocalDate playedOn, String holes) {
+        this.clientId = clientId;
         this.courseId = courseId;
         this.tee = tee;
         this.playedOn = playedOn;
