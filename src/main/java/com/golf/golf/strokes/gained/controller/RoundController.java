@@ -1,10 +1,16 @@
 package com.golf.golf.strokes.gained.controller;
 
+import java.util.List;
+
+import com.golf.golf.strokes.gained.dto.RoundDetailDto;
 import com.golf.golf.strokes.gained.dto.RoundDto;
 import com.golf.golf.strokes.gained.dto.UploadRoundRequest;
 import com.golf.golf.strokes.gained.service.RoundService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,6 +33,25 @@ public class RoundController {
         RoundService.UploadResult result = roundService.uploadRound(request);
         HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
         return ResponseEntity.status(status).body(result.round());
+    }
+
+    // GET /api/v1/rounds -> compact list of every round, newest first
+    @GetMapping
+    public List<RoundDto> listRounds() {
+        return roundService.listRounds();
+    }
+
+    // GET /api/v1/rounds/9 -> full scorecard for round 9 (404 if there's no round 9)
+    @GetMapping("/{id}")
+    public RoundDetailDto getRound(@PathVariable Long id) {
+        return roundService.getRound(id);
+    }
+
+    // DELETE /api/v1/rounds/9 -> 204 (nothing to send back), 404 if there's no round 9
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteRound(@PathVariable Long id) {
+        roundService.deleteRound(id);
+        return ResponseEntity.noContent().build();
     }
 }
 

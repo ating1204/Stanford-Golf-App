@@ -1,6 +1,7 @@
 package com.golf.golf.strokes.gained.service;
 
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -9,12 +10,16 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.golf.golf.strokes.gained.dto.RoundDetailDto;
 import com.golf.golf.strokes.gained.dto.RoundDto;
+import com.golf.golf.strokes.gained.dto.RoundHoleDto;
+import com.golf.golf.strokes.gained.dto.ShotDto;
 import com.golf.golf.strokes.gained.dto.UploadHoleRequest;
 import com.golf.golf.strokes.gained.dto.UploadRoundRequest;
 import com.golf.golf.strokes.gained.dto.UploadShotRequest;
@@ -160,6 +165,53 @@ public class RoundService {
         return new UploadResult(toDto(savedRound), true);
     }
 
+    /* compact list of every round, newest first (tap one -> getRound for the full scorecard) */
+    public List<RoundDto> listRounds() {
+        return roundRepo.findAll(Sort.by(Sort.Direction.DESC, "playedOn", "id"))
+                .stream().map(RoundService::toDto).toList();
+    }
+
+    /* full scorecard for one round: round + every hole (score, stats) + recorded shots */
+    public RoundDetailDto getRound(Long id) {
+        Round round = roundRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No round with id " + id));
+
+        List<RoundHole> roundHoles = roundHoleRepo.findByRoundId(id);
+        List<Long> roundHoleIds = roundHoles.stream().map(RoundHole::getId).toList();
+
+        // every hole's shots in one query, then grouped by hole (stays in shot order)
+        Map<Long, List<ShotDto>> shotsByRoundHoleId = shotRepo.findByRoundHoleIdInOrderByShotNumberAsc(roundHoleIds)
+                .stream().collect(Collectors.groupingBy(Shot::getRoundHoleId,
+                        Collectors.mapping(RoundService::toShotDto, Collectors.toList())));
+
+        // round_hole only stores hole_id; the scorecard needs hole number + par
+        Map<Long, Hole> holeById = holeRepo.findAllById(roundHoles.stream().map(RoundHole::getHoleId).toList())
+                .stream().collect(Collectors.toMap(Hole::getId, Function.identity()));
+
+        List<RoundHoleDto> holesPlayed = roundHoles.stream()
+                .map(rh -> {
+                    Hole hole = holeById.get(rh.getHoleId());
+                    return new RoundHoleDto(hole.getHoleNumber(), hole.getPar(), rh.getScore(), rh.getGir(),
+                            rh.getFairway(), rh.getPutts(), rh.getChips(), rh.getSandShots(), rh.getPenalties(),
+                            shotsByRoundHoleId.getOrDefault(rh.getId(), List.of()));
+                })
+                // db rows come back in no guaranteed order
+                .sorted(Comparator.comparing(RoundHoleDto::holeNumber))
+                .toList();
+
+        return new RoundDetailDto(round.getId(), round.getCourseId(), round.getTee(), round.getHoles(),
+                round.getPlayedOn(), round.getTotalScore(), holesPlayed);
+    }
+
+    /* deletes a round; its holes and shots go with it (ON DELETE CASCADE in V9/V10) */
+    @Transactional
+    public void deleteRound(Long id) {
+        if (!roundRepo.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No round with id " + id);
+        }
+        roundRepo.deleteById(id);
+    }
+
     // shot checks for one hole; the db would also reject most of these, but as a 500 instead of a clear 400
     private void checkShots(UploadHoleRequest hole) {
         Set<Integer> seenShots = new HashSet<>();
@@ -194,5 +246,11 @@ public class RoundService {
     private static RoundDto toDto(Round r) {
         return new RoundDto(r.getId(), r.getCourseId(), r.getTee(),
                 r.getHoles(), r.getPlayedOn(), r.getTotalScore());
+    }
+
+    private static ShotDto toShotDto(Shot s) {
+        return new ShotDto(s.getShotNumber(), s.getClub(), s.getStartDist(), s.getEndDist(),
+                s.getStartLie(), s.getEndLie(), s.getStartLat(), s.getStartLng(),
+                s.getEndLat(), s.getEndLng(), s.getPenalties());
     }
 }
