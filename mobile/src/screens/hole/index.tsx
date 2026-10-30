@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,7 +9,7 @@ import { MapColors, Radius, Spacing, Type } from '@/constants/theme';
 import { useLocation } from '@/hooks/use-location';
 import { useTheme } from '@/hooks/use-theme';
 import { useRound } from '@/state/round';
-import { FIRST_HOLE, getHole, greenOf, LAST_HOLE, teeOf } from '@/utils/course';
+import { getHole, greenOf, SIDE_HOLES, teeOf } from '@/utils/course';
 import { haversineYards, type LatLng } from '@/utils/geo';
 
 const YARDS_PER_M = 1.0936133;
@@ -30,7 +30,10 @@ export function HoleScreen({ holeNumber, teeName }: { holeNumber: number; teeNam
   const tee = teeOf(hole, teeName);
   const green = greenOf(hole);
   const { position, accuracyM, error } = useLocation();
-  const { scoreFor, shotsForHole } = useRound();
+  const { round, hole: holeEntry, setCurrentHole } = useRound();
+
+  // remembered so Resume Round brings you back here
+  useEffect(() => setCurrentHole(holeNumber), [holeNumber, setCurrentHole]);
 
   const [waypoints, setWaypoints] = useState<LatLng[]>(() =>
     defaultWaypoints(tee.position, green, hole.par),
@@ -38,8 +41,12 @@ export function HoleScreen({ holeNumber, teeName }: { holeNumber: number; teeNam
 
   const path = useMemo(() => [tee.position, ...waypoints, green], [tee.position, waypoints, green]);
   const toGreen = position ? Math.round(haversineYards(position, green)) : null;
-  const score = scoreFor(holeNumber);
-  const shotCount = shotsForHole(holeNumber).length;
+  const entry = holeEntry(holeNumber);
+  const shotCount = entry.shots.length;
+  // prev/next stay within the nine you're playing
+  const sideHoles = SIDE_HOLES[round?.side ?? 'full'];
+  const firstHole = sideHoles[0];
+  const lastHole = sideHoles[sideHoles.length - 1];
 
   const onMoveWaypoint = useCallback((index: number, p: LatLng) => {
     setWaypoints((prev) => {
@@ -92,11 +99,11 @@ export function HoleScreen({ holeNumber, teeName }: { holeNumber: number; teeNam
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Previous hole"
-            disabled={holeNumber === FIRST_HOLE}
+            disabled={holeNumber === firstHole}
             onPress={() => goTo(holeNumber - 1)}
             style={({ pressed }) => [
               styles.side,
-              holeNumber === FIRST_HOLE && styles.disabled,
+              holeNumber === firstHole && styles.disabled,
               pressed && styles.pressed,
             ]}
           >
@@ -114,18 +121,18 @@ export function HoleScreen({ holeNumber, teeName }: { holeNumber: number; teeNam
           >
             <Text style={[styles.enterTitle, { color: c.onAccent }]}>Hole {holeNumber}</Text>
             <Text style={[styles.enterSub, { color: c.onAccent }]}>
-              {score.strokes != null ? `Score ${score.strokes}` : 'Enter Score'}
+              {entry.score != null ? `Score ${entry.score}` : 'Enter Score'}
             </Text>
           </Pressable>
 
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Next hole"
-            disabled={holeNumber === LAST_HOLE}
+            disabled={holeNumber === lastHole}
             onPress={() => goTo(holeNumber + 1)}
             style={({ pressed }) => [
               styles.side,
-              holeNumber === LAST_HOLE && styles.disabled,
+              holeNumber === lastHole && styles.disabled,
               pressed && styles.pressed,
             ]}
           >

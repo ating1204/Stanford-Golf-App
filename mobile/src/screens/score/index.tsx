@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChoiceGrid } from '@/components/choice-grid';
 import { Radius, Spacing, Type } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { useRound } from '@/state/round';
+import { FAIRWAY_RESULTS, GIR_RESULTS, label, useRound } from '@/state/round';
 import { getHole } from '@/utils/course';
 
 const COUNTS = [0, 1, 2, 3, 4] as const;
@@ -14,8 +14,9 @@ export function ScoreScreen({ holeNumber }: { holeNumber: number }) {
   const c = useTheme();
   const insets = useSafeAreaInsets();
   const hole = getHole(holeNumber);
-  const { scoreFor, setScore } = useRound();
-  const s = scoreFor(holeNumber);
+  const { hole: holeEntry, updateHole } = useRound();
+  const s = holeEntry(holeNumber);
+  const setScore = (patch: Parameters<typeof updateHole>[1]) => updateHole(holeNumber, patch);
 
   // a sensible range around par rather than a fixed 2-10
   const strokeOptions = Array.from({ length: 9 }, (_, i) => hole.par - 3 + i).filter((n) => n >= 1);
@@ -32,8 +33,8 @@ export function ScoreScreen({ holeNumber }: { holeNumber: number }) {
         <ChoiceGrid
           label="Score"
           options={strokeOptions}
-          value={s.strokes}
-          onChange={(v) => setScore(holeNumber, { strokes: v })}
+          value={s.score ?? undefined}
+          onChange={(v) => setScore({ score: v })}
           columns={3}
           render={(v) => (v === hole.par ? `${v}  Par` : `${v}`)}
         />
@@ -41,50 +42,52 @@ export function ScoreScreen({ holeNumber }: { holeNumber: number }) {
         <ChoiceGrid
           label="Putts"
           options={COUNTS}
-          value={s.putts}
-          onChange={(v) => setScore(holeNumber, { putts: v })}
+          value={s.putts ?? undefined}
+          onChange={(v) => setScore({ putts: v })}
           render={(v) => (v === 4 ? '≥4' : `${v}`)}
         />
 
         {hole.par > 3 && (
           <ChoiceGrid
-            label="Fairway Hit"
-            options={[true, false] as const}
-            value={s.fairwayHit}
-            onChange={(v) => setScore(holeNumber, { fairwayHit: v })}
-            render={(v) => (v ? '✓' : '✕')}
+            label="Fairway"
+            options={FAIRWAY_RESULTS}
+            value={s.fairway ?? undefined}
+            onChange={(v) => setScore({ fairway: v })}
+            render={label}
+            columns={3}
           />
         )}
 
         <ChoiceGrid
           label="Green in Regulation"
-          options={[true, false] as const}
-          value={s.gir}
-          onChange={(v) => setScore(holeNumber, { gir: v })}
-          render={(v) => (v ? '✓' : '✕')}
+          options={GIR_RESULTS}
+          value={s.gir ?? undefined}
+          onChange={(v) => setScore({ gir: v })}
+          render={label}
+          columns={3}
         />
 
         <ChoiceGrid
           label="Chip Shots"
           options={COUNTS}
-          value={s.chips}
-          onChange={(v) => setScore(holeNumber, { chips: v })}
+          value={s.chips ?? undefined}
+          onChange={(v) => setScore({ chips: v })}
           render={(v) => (v === 4 ? '≥4' : `${v}`)}
         />
 
         <ChoiceGrid
           label="Greenside Sand Shots"
           options={COUNTS}
-          value={s.sandShots}
-          onChange={(v) => setScore(holeNumber, { sandShots: v })}
+          value={s.sandShots ?? undefined}
+          onChange={(v) => setScore({ sandShots: v })}
           render={(v) => (v === 4 ? '≥4' : `${v}`)}
         />
 
         <ChoiceGrid
           label="Penalties"
           options={COUNTS}
-          value={s.penalties}
-          onChange={(v) => setScore(holeNumber, { penalties: v })}
+          value={s.penalties ?? undefined}
+          onChange={(v) => setScore({ penalties: v })}
           render={(v) => (v === 4 ? '≥4' : `${v}`)}
         />
       </ScrollView>

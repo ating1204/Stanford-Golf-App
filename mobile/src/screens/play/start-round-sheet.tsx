@@ -32,9 +32,7 @@ export function StartRoundSheet({ visible, onClose }: { visible: boolean; onClos
   const [side, setSide] = useState<Side>('full');
 
   const teeOff = () => {
-    // the round doesn't store the side yet (reshaping round.tsx is next);
-    // for now it only decides which hole you start on
-    startRound(tee);
+    startRound(tee, side);
     onClose();
     router.push(`/hole/${SIDE_HOLES[side][0]}?tee=${tee}`);
   };

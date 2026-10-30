@@ -7,8 +7,8 @@ import { ChoiceGrid } from '@/components/choice-grid';
 import { Radius, Spacing, Type } from '@/constants/theme';
 import { useLocation } from '@/hooks/use-location';
 import { useTheme } from '@/hooks/use-theme';
-import { CLUBS, LIES, useRound, type Club, type Lie } from '@/state/round';
-import { getHole, teeOf } from '@/utils/course';
+import { CLUBS, label, LIES, useRound, type Club, type Lie } from '@/state/round';
+import { getHole, greenOf, teeOf } from '@/utils/course';
 import { haversineYards } from '@/utils/geo';
 
 export function TrackScreen({ holeNumber, teeName }: { holeNumber: number; teeName: string }) {
@@ -16,21 +16,40 @@ export function TrackScreen({ holeNumber, teeName }: { holeNumber: number; teeNa
   const insets = useSafeAreaInsets();
   const hole = getHole(holeNumber);
   const { position } = useLocation();
-  const { addShot, shotsForHole } = useRound();
+  const { hole: holeEntry, addShot } = useRound();
 
-  const previous = shotsForHole(holeNumber);
+  const previous = holeEntry(holeNumber).shots;
+  const last = previous.at(-1);
   // the shot starts where the last one ended, or at the tee for your first
-  const from = previous.length ? previous[previous.length - 1].to : teeOf(hole, teeName).position;
+  const from =
+    last?.endLat != null && last.endLng != null
+      ? { lat: last.endLat, lng: last.endLng }
+      : teeOf(hole, teeName).position;
+  const startLie: Lie = last?.endLie ?? 'tee';
+  const green = greenOf(hole);
 
   const [club, setClub] = useState<Club | undefined>(previous.length ? undefined : 'Dr');
-  const [lie, setLie] = useState<Lie | undefined>(previous.length ? undefined : 'Tee');
+  // the lie you pick is where the ball ended up
+  const [lie, setLie] = useState<Lie | undefined>(undefined);
 
   const yards = position ? Math.round(haversineYards(from, position)) : null;
   const canSave = position != null && club != null && lie != null;
 
   const save = () => {
     if (!position || !club || !lie) return;
-    addShot({ holeNumber, from, to: position, yards: yards ?? 0, club, lie });
+    // start/end are stored as distance to the green, the unit strokes gained uses
+    addShot(holeNumber, {
+      club,
+      startDist: Math.round(haversineYards(from, green)),
+      endDist: Math.round(haversineYards(position, green)),
+      startLie,
+      endLie: lie,
+      startLat: from.lat,
+      startLng: from.lng,
+      endLat: position.lat,
+      endLng: position.lng,
+      penalties: 0,
+    });
     router.back();
   };
 
@@ -61,7 +80,7 @@ export function TrackScreen({ holeNumber, teeName }: { holeNumber: number; teeNa
           columns={4}
         />
 
-        <ChoiceGrid label="Lie" options={LIES} value={lie} onChange={setLie} columns={3} />
+        <ChoiceGrid label="Lie Now" options={LIES} value={lie} onChange={setLie} render={label} columns={3} />
       </ScrollView>
 
       <View style={[styles.footer, { backgroundColor: c.surface, paddingBottom: insets.bottom + Spacing.two }]}>
