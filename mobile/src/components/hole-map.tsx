@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -8,6 +8,8 @@ import Animated, {
   useSharedValue,
   withDecay,
   withSpring,
+  withTiming,
+  Easing,
 } from 'react-native-reanimated';
 import Svg, { Circle, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -28,6 +30,9 @@ export function HoleMap({
   position,
   path,
   onMoveWaypoint,
+  shot,
+  onMoveShot,
+  focus,
 }: {
   holeNumber: number;
   /** only this tee is marked -- showing all four clutters the line */
@@ -37,6 +42,14 @@ export function HoleMap({
   path?: LatLng[];
   /** fired while dragging an aim point: index within the waypoint list */
   onMoveWaypoint?: (index: number, p: LatLng) => void;
+  /** shot tracking: two draggable green pins (start, end) replace the aim line */
+  shot?: { start: LatLng; end: LatLng } | null;
+  onMoveShot?: (index: 0 | 1, p: LatLng) => void;
+  /**
+   * zoom to fit these points inside the part of the map not covered by overlays
+   * (`top` / `bottom` = how much the header and bottom panel cover); re-fits when it changes
+   */
+  focus?: { points: LatLng[]; top: number; bottom: number } | null;
 }) {
   const reduced = useReducedMotion();
   const hole = useMemo(() => getHole(holeNumber), [holeNumber]);
@@ -53,13 +66,15 @@ export function HoleMap({
   const dispW = useSharedValue(0);
   const dispH = useSharedValue(0);
 
-  // Fit the image inside the container ourselves rather than using
-  // contentFit="contain", so the SVG overlay can sit on exactly the same rect.
+  // Size the image to cover the container ourselves rather than using
+  // contentFit="cover", so the SVG overlay can sit on exactly the same rect.
+  // Cover, not contain: the hole images are 1:2 and phones are taller, so
+  // contain left black bars top and bottom. The cropped side strips can be panned to.
   const onLayout = useCallback(
     (e: LayoutChangeEvent) => {
       const { width, height } = e.nativeEvent.layout;
       const aspect = meta.widthPx / meta.heightPx;
-      const w = width / height > aspect ? height * aspect : width;
+      const w = width / height > aspect ? width : height * aspect;
       const h = w / aspect;
       contW.set(width);
       contH.set(height);
@@ -91,9 +106,11 @@ export function HoleMap({
   // transform and hands over image pixels.
   const reportMove = useCallback(
     (index: number, imgX: number, imgY: number) => {
-      onMoveWaypoint?.(index, imagePxToLatLng(meta, imgX, imgY));
+      const p = imagePxToLatLng(meta, imgX, imgY);
+      if (shot) onMoveShot?.(index as 0 | 1, p);
+      else onMoveWaypoint?.(index, p);
     },
-    [meta, onMoveWaypoint],
+    [meta, shot, onMoveShot, onMoveWaypoint],
   );
 
   // aim-point positions in image pixels, readable from the gesture worklet
@@ -141,7 +158,6 @@ export function HoleMap({
     .onBegin((e) => {
       // grabbing an aim point takes precedence over panning the map
       dragIndex.set(-1);
-      if (!onMoveWaypoint) return;
       const pts = wpPx.get();
       let best = GRAB_RADIUS;
       for (let i = 0; i < pts.length; i++) {
@@ -177,6 +193,37 @@ export function HoleMap({
       ty.set(withDecay({ velocity: e.velocityY, clamp: [-b.y, b.y], rubberBandEffect: true }));
     });
 
+  // zoom so every focus point sits inside the uncovered part of the map, with room around it
+  const focusKey = focus ? JSON.stringify(focus) : '';
+  useEffect(() => {
+    if (!focus || focus.points.length === 0 || box.w === 0) return;
+    const w = contW.get();
+    const h = contH.get();
+    const local = focus.points.map((p) => {
+      const px = latLngToImagePx(meta, p);
+      return { x: px.x * (box.w / meta.widthPx) - box.w / 2, y: px.y * (box.h / meta.heightPx) - box.h / 2 };
+    });
+    const xs = local.map((p) => p.x);
+    const ys = local.map((p) => p.y);
+    const pad = 70;
+    const visibleH = Math.max(1, h - focus.top - focus.bottom);
+    const spanX = Math.max(1, Math.max(...xs) - Math.min(...xs));
+    const spanY = Math.max(1, Math.max(...ys) - Math.min(...ys));
+    const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.min((w - pad * 2) / spanX, (visibleH - pad * 2) / spanY)));
+    const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
+    const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+    // centre of the uncovered band, measured from the container centre
+    const bandCentre = (focus.top - focus.bottom) / 2;
+    const b = { x: Math.max(0, (box.w * s - w) / 2), y: Math.max(0, (box.h * s - h) / 2) };
+    const clamp = (v: number, lim: number) => Math.min(lim, Math.max(-lim, v));
+    const timing = { duration: reduced ? 0 : 450, easing: Easing.out(Easing.cubic) };
+    scale.set(withTiming(s, timing));
+    tx.set(withTiming(clamp(-cx * s, b.x), timing));
+    ty.set(withTiming(clamp(-cy * s + bandCentre, b.y), timing));
+    // focus is compared by value through focusKey; the shared values are stable refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusKey, box.w, box.h, meta]);
+
   const gesture = Gesture.Simultaneous(pinch, pan);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -188,10 +235,14 @@ export function HoleMap({
   // may fall outside the image when you are not on this hole -- SVG clips it
   const me = position ? latLngToImagePx(meta, position) : null;
 
-  const pts = (path ?? []).map((p) => latLngToImagePx(meta, p));
-  // interior nodes only -- the tee anchor is not draggable
-  wpPx.set(pts.slice(1, -1));
-  const legs = (path ?? []).slice(0, -1).map((p, i) => {
+  // in shot mode the aim line steps aside for the two shot pins
+  const aimPath = shot ? [] : (path ?? []);
+  const pts = aimPath.map((p) => latLngToImagePx(meta, p));
+  const shotPx = shot ? [latLngToImagePx(meta, shot.start), latLngToImagePx(meta, shot.end)] : null;
+  const shotYards = shot ? Math.round(haversineYards(shot.start, shot.end)) : 0;
+  // what a drag can grab: the shot pins, or the aim line's interior nodes (the tee anchor is fixed)
+  wpPx.set(shotPx ?? (onMoveWaypoint ? pts.slice(1, -1) : []));
+  const legs = aimPath.slice(0, -1).map((p, i) => {
     const a = pts[i];
     const b = pts[i + 1];
     return {
@@ -199,7 +250,7 @@ export function HoleMap({
       a,
       b,
       mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
-      yards: Math.round(haversineYards(p, path![i + 1])),
+      yards: Math.round(haversineYards(p, aimPath[i + 1])),
     };
   });
 
@@ -271,6 +322,49 @@ export function HoleMap({
 
             {me && (
               <Circle cx={me.x} cy={me.y} r={30} fill={MapColors.me} stroke={MapColors.line} strokeWidth={12} />
+            )}
+
+            {shotPx && (
+              <>
+                <Line
+                  x1={shotPx[0].x}
+                  y1={shotPx[0].y}
+                  x2={shotPx[1].x}
+                  y2={shotPx[1].y}
+                  stroke={MapColors.line}
+                  strokeWidth={9}
+                  strokeDasharray="28 18"
+                />
+                {shotPx.map((p, i) => (
+                  <Circle
+                    key={`pin-${i}`}
+                    cx={p.x}
+                    cy={p.y}
+                    r={44}
+                    fill={MapColors.shot}
+                    stroke={MapColors.line}
+                    strokeWidth={12}
+                  />
+                ))}
+                <Rect
+                  x={(shotPx[0].x + shotPx[1].x) / 2 - 95}
+                  y={(shotPx[0].y + shotPx[1].y) / 2 - 42}
+                  width={190}
+                  height={84}
+                  rx={42}
+                  fill={MapColors.shot}
+                />
+                <SvgText
+                  x={(shotPx[0].x + shotPx[1].x) / 2}
+                  y={(shotPx[0].y + shotPx[1].y) / 2 + 20}
+                  fontSize={56}
+                  fontWeight="bold"
+                  fill={MapColors.line}
+                  textAnchor="middle"
+                >
+                  {shotYards}
+                </SvgText>
+              </>
             )}
           </Svg>
         </Animated.View>

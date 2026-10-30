@@ -1,11 +1,12 @@
-import { router } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { HudSurface } from '@/components/hud-surface';
 import { MapColors, Radius, Spacing, Type } from '@/constants/theme';
 
 /**
- * The bar across the top of the map: a back control, then one dark pill holding
+ * The bar across the top of the map: a back control, then one glass pill holding
  * the facts you glance at between shots -- hole, distance to the middle of the
  * green, par, and the tee you are playing.
  */
@@ -17,6 +18,8 @@ export function HoleHeader({
   teeYards,
   onBack,
   onPickHole,
+  pickerOpen = false,
+  onPillLayout,
 }: {
   holeNumber: number;
   toGreen: number | null;
@@ -25,37 +28,55 @@ export function HoleHeader({
   teeYards: number;
   onBack: () => void;
   onPickHole?: () => void;
+  /** flips the chevron while the hole list hangs below */
+  pickerOpen?: boolean;
+  /** where the glass pill sits on screen, so the hole list can attach right under it */
+  onPillLayout?: (frame: { x: number; y: number; width: number; height: number }) => void;
 }) {
   const insets = useSafeAreaInsets();
 
   return (
     <View style={[styles.root, { paddingTop: insets.top + Spacing.one }]} pointerEvents="box-none">
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Back"
-        onPress={onBack}
-        hitSlop={10}
-        style={({ pressed }) => [styles.back, pressed && styles.pressed]}
-      >
-        <Text style={styles.backGlyph}>‹</Text>
-      </Pressable>
+      <HudSurface interactive style={styles.back}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          onPress={onBack}
+          hitSlop={4}
+          style={styles.fill}
+        >
+          <SymbolView
+            name={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }}
+            size={18}
+            weight="semibold"
+            tintColor={MapColors.hudText}
+          />
+        </Pressable>
+      </HudSurface>
 
-      <View style={styles.pill}>
+      <HudSurface style={styles.pill} onLayout={(e) => onPillLayout?.(e.nativeEvent.layout)}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Hole ${holeNumber}, choose hole`}
+          accessibilityState={{ expanded: pickerOpen }}
           onPress={onPickHole}
           hitSlop={8}
           style={styles.holeCell}
         >
           <Text style={styles.holeNumber}>{holeNumber}</Text>
-          <Text style={styles.caret}>▾</Text>
+          <SymbolView
+            name={{ ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }}
+            size={10}
+            weight="bold"
+            tintColor={MapColors.hudMuted}
+            style={{ transform: [{ rotate: pickerOpen ? '180deg' : '0deg' }] }}
+          />
         </Pressable>
 
         <Field label="Mid Green" value={toGreen != null ? `${toGreen}` : '—'} unit="Yds" strong />
         <Field label="Par" value={`${par}`} />
         <Field label={teeName} value={`${teeYards}`} />
-      </View>
+      </HudSurface>
     </View>
   );
 }
@@ -95,34 +116,24 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingHorizontal: Spacing.two,
   },
-  back: {
-    width: 40,
-    height: 40,
-    borderRadius: Radius.full,
-    backgroundColor: MapColors.hudStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pressed: { opacity: 0.7 },
-  backGlyph: { color: MapColors.hudText, fontSize: 26, lineHeight: 28, marginTop: -2 },
+  back: { width: 44, height: 44, borderRadius: Radius.full },
+  fill: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   pill: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: MapColors.hudStrong,
     borderRadius: Radius.lg,
     borderCurve: 'continuous',
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     gap: Spacing.three,
   },
-  holeCell: { alignItems: 'center', minWidth: 22 },
-  holeNumber: { ...Type.title, color: MapColors.hudText, lineHeight: 26 },
-  caret: { color: MapColors.hudMuted, fontSize: 9, marginTop: -2 },
+  holeCell: { alignItems: 'center', minWidth: 28, minHeight: 44, justifyContent: 'center' },
+  holeNumber: { ...Type.numeral, color: MapColors.hudText, lineHeight: 30 },
   field: { flex: 1 },
-  fieldLabel: { ...Type.caption, fontSize: 10, color: MapColors.hudMuted },
+  fieldLabel: { ...Type.caption, color: MapColors.hudMuted },
   fieldLine: { flexDirection: 'row', alignItems: 'baseline' },
-  fieldValue: { ...Type.headline, color: MapColors.hudText },
-  fieldValueStrong: { ...Type.title, color: MapColors.hudText },
-  fieldUnit: { ...Type.caption, fontSize: 10, color: MapColors.hudMuted, marginLeft: 1 },
+  fieldValue: { ...Type.numeralSmall, color: MapColors.hudText },
+  fieldValueStrong: { ...Type.numeral, color: MapColors.hudText },
+  fieldUnit: { ...Type.caption, color: MapColors.hudMuted, marginLeft: 2 },
 });

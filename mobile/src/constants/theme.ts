@@ -11,6 +11,39 @@ import '@/global.css';
 
 import { Platform } from 'react-native';
 
+/**
+ * The one green. Every green in the app -- glass buttons, selected chips, accent
+ * text, tab highlight -- comes from here, so they always match.
+ * `base` carries white text at 4.9:1; `glass` is the same green as a Liquid Glass
+ * tint -- see-through enough to read as glass; button labels are bold 19pt (large
+ * text) so white stays readable on it.
+ */
+export const Green = {
+  base: '#00815F',
+  deep: '#006B4F',
+  glass: 'rgba(0, 129, 95, 0.7)',
+  /** brighter variant for green text/marks on dark backgrounds */
+  bright: '#1FB88E',
+  soft: '#A9E5D2',
+  softDark: '#134336',
+  /** a faint wash over the light glass sheets: reads as clear white, but on-brand */
+  sheetTint: 'rgba(0, 129, 95, 0.07)',
+  /** a picked chip: see-through green with a solid green edge and bold green text */
+  selectedFill: 'rgba(0, 129, 95, 0.16)',
+} as const;
+
+/**
+ * How every selected chip / button looks: translucent green, a 2pt green edge,
+ * and the text and any marks inside in bold deep green.
+ * Unselected chips carry a clear 2pt edge so nothing shifts.
+ */
+export const Selected = {
+  fill: Green.selectedFill,
+  edge: Green.base,
+  text: Green.deep,
+  edgeWidth: 2,
+} as const;
+
 export const Colors = {
   light: {
     text: '#111418',
@@ -20,10 +53,14 @@ export const Colors = {
     backgroundElement: '#F0F0F3',
     backgroundSelected: '#E0E1E6',
     separator: '#E3E8E4',
-    accent: '#00B88A',
-    accentDeep: '#019A74',
-    accentSoft: '#A9E5D2',
+    accent: Green.base,
+    accentDeep: Green.deep,
+    accentSoft: Green.soft,
     onAccent: '#FFFFFF',
+    /** solid fill behind white text (selected chips) */
+    accentFill: Green.base,
+    // controls sitting on a glass sheet: translucent so the glass still reads through
+    fill: 'rgba(255, 255, 255, 0.6)',
     danger: '#FF5A4E',
   },
   dark: {
@@ -34,10 +71,12 @@ export const Colors = {
     backgroundElement: '#212225',
     backgroundSelected: '#2E3135',
     separator: '#2A302D',
-    accent: '#0ACF9B',
-    accentDeep: '#00B88A',
-    accentSoft: '#134336',
-    onAccent: '#04150F',
+    accent: Green.bright,
+    accentDeep: Green.base,
+    accentSoft: Green.softDark,
+    onAccent: '#FFFFFF',
+    accentFill: Green.base,
+    fill: 'rgba(255, 255, 255, 0.12)',
     danger: '#FF6B60',
   },
 } as const;
@@ -63,9 +102,22 @@ export const MapColors = {
   labelFill: '#FFFFFF',
   labelText: '#111418',
   hud: 'rgba(0,0,0,0.65)',
+  /**
+   * fixed tint for every dark glass control on the map. Liquid Glass otherwise
+   * re-adapts to whatever is behind it each time a screen mounts, so the same
+   * control looked lighter or darker from one screen to the next.
+   */
+  hudTint: 'rgba(24, 28, 26, 0.38)',
+  /**
+   * the same look for big glass panels (the hole list): iOS renders large glass
+   * as thicker and darker than small pills, so a lighter tint evens them out
+   */
+  hudTintLarge: 'rgba(110, 114, 108, 0.32)',
   hudStrong: 'rgba(0,0,0,0.78)',
   hudText: '#FFFFFF',
   hudMuted: '#A8AFAC',
+  /** the two draggable shot pins and the line between them */
+  shot: Green.base,
 } as const;
 
 /**
@@ -83,11 +135,10 @@ export const MapColors = {
  * ignores the light/dark palette. The only cardinal on that screen is the logo.
  */
 export const Brand = {
-  accent: '#00B88A',
-  /** tint for Apple's Liquid Glass (iOS 26+); the frosted values below are the fallback */
-  liquidTint: 'rgba(0, 184, 138, 0.55)',
+  accent: Green.base,
+  /** every green button, Liquid Glass and frosted fallback alike */
+  greenGlass: Green.glass,
   liquidSheetTint: 'rgba(0, 120, 90, 0.25)',
-  glassTint: 'rgba(0, 184, 138, 0.3)',
   sheetTint: 'rgba(0, 120, 90, 0.22)',
   glassSheen: 'rgba(255, 255, 255, 0.22)',
   glassFill: 'rgba(255, 255, 255, 0.12)',
@@ -95,17 +146,17 @@ export const Brand = {
   onGlass: '#FFFFFF',
   onGlassSecondary: 'rgba(255, 255, 255, 0.75)',
   textShadow: 'rgba(0, 0, 0, 0.25)',
-  scrim: 'rgba(0, 0, 0, 0.3)',
+  scrim: 'rgba(0, 0, 0, 0.45)', // 40-60% keeps the sheet clearly in front
   fadeTop: 'rgba(0, 0, 0, 0.18)',
   fadeBottom: 'rgba(0, 0, 0, 0.6)',
 } as const;
 
 export const Chart = {
-  positive: '#00B88A',
+  positive: Green.base,
   negative: '#FF5A4E',
   zeroLine: '#D4DAD6',
   grid: '#EDF1EE',
-  trend: '#019A74',
+  trend: Green.deep,
 } as const;
 
 export const Fonts = Platform.select({
@@ -140,6 +191,9 @@ export const Fonts = Platform.select({
  */
 export const Type = {
   yardage: { fontSize: 44, fontWeight: '700', letterSpacing: -1 },
+  /** hole numbers, distances in the map header, the picked club; tabular so digits don't jitter */
+  numeral: { fontSize: 28, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  numeralSmall: { fontSize: 20, fontWeight: '600', fontVariant: ['tabular-nums'] },
   largeTitle: { fontSize: 32, fontWeight: '700', letterSpacing: -0.5 },
   title: { fontSize: 22, fontWeight: '700' },
   headline: { fontSize: 17, fontWeight: '600' },

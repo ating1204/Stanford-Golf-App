@@ -1,4 +1,4 @@
-import { toUploadRequest, type HoleEntry, type Round } from './round';
+import { formatToPar, scoreToPar, toUploadRequest, type HoleEntry, type Round } from './round';
 
 const empty: HoleEntry = {
   score: null,
@@ -74,5 +74,35 @@ describe('toUploadRequest', () => {
     const round = frontNine();
     round.holes[12] = { ...empty, score: 4 }; // left over from playing 18, then switching to front
     expect(toUploadRequest(round).holesPlayed).toEqual([]);
+  });
+});
+
+describe('scoreToPar', () => {
+  const par = (n: number) => (n === 1 ? 5 : 4); // hole 1 is a par 5, the rest par 4
+
+  it('is null until something is scored', () => {
+    expect(scoreToPar(frontNine(), par)).toBeNull();
+  });
+
+  it('only counts holes that have a score', () => {
+    const round = frontNine();
+    round.holes[1] = { ...empty, score: 7 }; // +2 on the par 5
+    round.holes[2] = { ...empty, score: 3 }; // -1
+    round.holes[3] = { ...empty, putts: 2 }; // no score: ignored
+    expect(scoreToPar(round, par)).toBe(1);
+  });
+
+  it('ignores scored holes that are not on the side', () => {
+    const round = frontNine();
+    round.holes[2] = { ...empty, score: 4 };
+    round.holes[12] = { ...empty, score: 9 }; // left over from an 18-hole round
+    expect(scoreToPar(round, par)).toBe(0);
+  });
+
+  it('formats like a scorecard', () => {
+    expect(formatToPar(null)).toBe('–');
+    expect(formatToPar(0)).toBe('E');
+    expect(formatToPar(25)).toBe('+25');
+    expect(formatToPar(-2)).toBe('−2');
   });
 });

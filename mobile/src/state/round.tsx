@@ -233,6 +233,25 @@ export function useRound(): RoundState {
   return ctx;
 }
 
+// ---------- totals ----------
+
+/**
+ * Strokes relative to par over the holes on the side that have a score; holes
+ * without one are left out of both sides of the sum. null until something is scored.
+ */
+export function scoreToPar(round: Round, parOf: (holeNumber: number) => number): number | null {
+  const scored = SIDE_HOLES[round.side].filter((n) => round.holes[n]?.score != null);
+  if (scored.length === 0) return null;
+  return scored.reduce((sum, n) => sum + (round.holes[n].score as number) - parOf(n), 0);
+}
+
+/** "E", "+3", "−2" -- the way golfers write a score to par (a real minus sign, not a hyphen). */
+export function formatToPar(diff: number | null): string {
+  if (diff === null) return '–';
+  if (diff === 0) return 'E';
+  return diff > 0 ? `+${diff}` : `−${-diff}`;
+}
+
 // ---------- upload ----------
 
 function hasData(h: HoleEntry): boolean {
