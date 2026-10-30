@@ -32,6 +32,29 @@ export function coursePar(): number {
   return course.holes.reduce((sum, h) => sum + h.par, 0);
 }
 
+/** Which nine (or both) a round covers -- the same values the backend's round.holes accepts. */
+export type Side = 'front' | 'back' | 'full';
+export const SIDES: readonly Side[] = ['front', 'back', 'full'];
+
+const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+export const SIDE_HOLES: Record<Side, number[]> = {
+  front: range(1, 9),
+  back: range(10, 18),
+  full: range(1, 18),
+};
+
+function sideHoles(side: Side): Hole[] {
+  return course.holes.filter((h) => SIDE_HOLES[side].includes(h.holeNumber));
+}
+
+export function sideYards(teeName: string, side: Side): number {
+  return sideHoles(side).reduce((sum, h) => sum + teeOf(h, teeName).yards, 0);
+}
+
+export function sidePar(side: Side): number {
+  return sideHoles(side).reduce((sum, h) => sum + h.par, 0);
+}
+
 /**
  * TEMPORARY: course.json has no green centre yet. The image centre is the
  * midpoint of the back tee and the green, so the green is the tee reflected

@@ -76,6 +76,30 @@ export const MapColors = {
  * Validated: CVD separation dE 8.8 (deutan), normal-vision dE 32.4. Contrast
  * against a white card is below 3:1, so every mark carries a visible label.
  */
+/**
+ * Frosted-glass layers that sit on top of photos: a light blur, a thin accent
+ * green tint so the photo still glows through, a sheen toward the top and a
+ * soft light edge. Static like MapColors: the Play screen is a photo, so it
+ * ignores the light/dark palette. The only cardinal on that screen is the logo.
+ */
+export const Brand = {
+  accent: '#00B88A',
+  /** tint for Apple's Liquid Glass (iOS 26+); the frosted values below are the fallback */
+  liquidTint: 'rgba(0, 184, 138, 0.55)',
+  liquidSheetTint: 'rgba(0, 120, 90, 0.25)',
+  glassTint: 'rgba(0, 184, 138, 0.3)',
+  sheetTint: 'rgba(0, 120, 90, 0.22)',
+  glassSheen: 'rgba(255, 255, 255, 0.22)',
+  glassFill: 'rgba(255, 255, 255, 0.12)',
+  glassEdge: 'rgba(255, 255, 255, 0.35)',
+  onGlass: '#FFFFFF',
+  onGlassSecondary: 'rgba(255, 255, 255, 0.75)',
+  textShadow: 'rgba(0, 0, 0, 0.25)',
+  scrim: 'rgba(0, 0, 0, 0.3)',
+  fadeTop: 'rgba(0, 0, 0, 0.18)',
+  fadeBottom: 'rgba(0, 0, 0, 0.6)',
+} as const;
+
 export const Chart = {
   positive: '#00B88A',
   negative: '#FF5A4E',
