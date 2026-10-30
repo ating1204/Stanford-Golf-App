@@ -50,3 +50,5 @@ build/
 
 ### claude ###
 .claude/settings.local.json:
+### play-round.mjs progress file ###
+tools/.round-in-progress.json
