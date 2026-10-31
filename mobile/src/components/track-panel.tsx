@@ -3,7 +3,7 @@ import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -25,8 +25,8 @@ import { CLUBS, label, type Club, type Lie } from '@/state/round';
 
 const LIQUID = isLiquidGlassAvailable();
 
-/** share of the screen the card covers: picking a club, then the lie + Save */
-const STAGE_HEIGHT = { club: 0.245, details: 0.515 } as const;
+/** share of the screen the card covers: picking a club, then the lies + Save */
+const STAGE_HEIGHT = { club: 0.245, details: 0.62 } as const;
 type Stage = keyof typeof STAGE_HEIGHT;
 /** how long the wheel has to sit still on a club before the next step comes up */
 const SETTLE_PAUSE_MS = 250;
@@ -55,7 +55,7 @@ const ENTER = SlideInDown.duration(380).easing(Easing.out(Easing.cubic));
 const EXIT = SlideOutDown.duration(280).easing(Easing.in(Easing.cubic));
 
 /** what a half-finished shot remembers when the card is swiped away */
-export type TrackDraft = { club: Club | null; lie: Lie | null };
+export type TrackDraft = { club: Club | null; startLie: Lie; lie: Lie | null };
 
 /** a swipe down of at least this much (or a quick flick) counts */
 const SWIPE_STEP = 60;
@@ -65,31 +65,40 @@ const SWIPE_CLOSE = 200;
  * Shot tracking over the map, as a floating glass card. It slides up showing the
  * club wheel ("Select Club" highlighted, the first club underneath) and keeps its
  * size while you scroll; once the wheel has sat on a club for a quarter second it
- * springs up to the lie and Save. Swipe the top down: from the lie step it goes
- * back to the wheel; from the wheel (or a long swipe) it closes but remembers
- * the club and lie (`onDismiss`). The ✕ throws the shot away.
+ * springs up to the start and end lies and Save. Swipe the top down: from the lie
+ * step it goes back to the wheel; from the wheel (or a long swipe) it closes but
+ * remembers the picks (`onDismiss`). The ✕ throws the shot away.
  */
 export function TrackPanel({
   shotNumber,
   yards,
+  defaultStartLie,
   draft,
+  editing = false,
   onHeightChange,
   onSave,
   onCancel,
   onDismiss,
+  onDelete,
 }: {
   shotNumber: number;
   /** distance between the two shot pins */
   yards: number;
+  /** where the last shot ended, or the tee; starts selected for a new shot */
+  defaultStartLie: Lie;
   /** how much of the map the card covers, so the map can keep the pins above it */
   onHeightChange: (height: number) => void;
-  onSave: (club: Club, endLie: Lie) => void;
+  onSave: (club: Club, startLie: Lie, endLie: Lie) => void;
   /** ✕: discard this shot */
   onCancel: () => void;
   /** swiped away: close, but keep what was picked for next time */
   onDismiss: (draft: TrackDraft) => void;
   /** picks from last time the card was swiped away, if any */
   draft?: TrackDraft | null;
+  /** changing a logged shot: `draft` holds its club and lies, and ✕ just leaves it as it was */
+  editing?: boolean;
+  /** shown while editing, behind a confirmation */
+  onDelete?: () => void;
 }) {
   const c = useTheme();
   const insets = useSafeAreaInsets();
@@ -97,6 +106,7 @@ export function TrackPanel({
 
   const [stage, setStage] = useState<Stage>(draft?.club ? 'details' : 'club');
   const [club, setClub] = useState<Club | null>(draft?.club ?? null);
+  const [startLie, setStartLie] = useState<Lie>(draft?.startLie ?? defaultStartLie);
   const [lie, setLie] = useState<Lie | null>(draft?.lie ?? null);
   // read from the wheel's settle callback, which fires outside render
   const clubRef = useRef<Club | null>(draft?.club ?? null);
@@ -126,7 +136,7 @@ export function TrackPanel({
 
   const swipedDown = (distance: number) => {
     if (stage === 'details' && distance < SWIPE_CLOSE) setStage('club');
-    else onDismiss({ club: clubRef.current, lie });
+    else onDismiss({ club: clubRef.current, startLie, lie });
   };
 
   const swipe = usePanGesture({
@@ -177,7 +187,7 @@ export function TrackPanel({
             <Text style={[styles.yards, { color: Green.deep }]}>{yards} yds</Text>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Cancel shot"
+              accessibilityLabel={editing ? 'Close without changes' : 'Cancel shot'}
               onPress={onCancel}
               hitSlop={8}
               style={[styles.close, { backgroundColor: c.fill }]}
@@ -207,59 +217,100 @@ export function TrackPanel({
       </View>
 
       {stage === 'details' && (
-        <Animated.View entering={FadeIn.duration(300)} style={styles.details}>
-          <Text style={[styles.detailsTitle, { color: c.text }]}>Where did it end up?</Text>
-          <View style={styles.lies}>
-            {LIE_ORDER.map((l) => {
-              const selected = l === lie;
-              const fg = selected ? Selected.text : c.text;
-              return (
-                <Pressable
-                  key={l}
-                  accessibilityRole="button"
-                  accessibilityLabel={label(l)}
-                  accessibilityState={{ selected }}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    setLie(selected ? null : l);
-                  }}
-                  style={styles.lie}
-                >
-                  <View style={[styles.lieCircle, selected ? styles.selected : { backgroundColor: c.fill }]}>
-                    {LIE_LETTERS[l] ? (
-                      <Text style={[styles.lieLetter, { color: fg }]}>{LIE_LETTERS[l]}</Text>
-                    ) : (
-                      <SymbolView
-                        name={{ ios: 'arrow.triangle.2.circlepath', android: 'sync', web: 'sync' }}
-                        size={20}
-                        weight="semibold"
-                        tintColor={fg}
-                      />
-                    )}
-                  </View>
-                  <Text style={[styles.lieLabel, { color: c.text }, selected && styles.lieLabelSelected]}>
-                    {label(l)}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+        <View style={styles.details}>
+          {/* only the rows fade in: the Save button is glass, which iOS drops inside a fading view */}
+          <Animated.View entering={FadeIn.duration(300)} style={styles.lieRows}>
+            <LieRow title="Start Lie" value={startLie} onPick={setStartLie} />
+            <LieRow title="End Lie" value={lie} onPick={(l) => setLie(l === lie ? null : l)} />
+          </Animated.View>
 
-          <View style={{ paddingBottom: Math.max(Spacing.three, insets.bottom - EDGE) }}>
+          <View style={[styles.actions, { paddingBottom: Math.max(Spacing.three, insets.bottom - EDGE) }]}>
+            {onDelete && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Delete shot"
+                onPress={() =>
+                  Alert.alert(`Delete shot ${shotNumber}?`, 'This removes it from the hole.', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: onDelete },
+                  ])
+                }
+                style={({ pressed }) => [
+                  styles.delete,
+                  { backgroundColor: c.fill },
+                  pressed && styles.deletePressed,
+                ]}
+              >
+                <SymbolView
+                  name={{ ios: 'trash', android: 'delete', web: 'delete' }}
+                  size={20}
+                  weight="semibold"
+                  tintColor={c.danger}
+                />
+              </Pressable>
+            )}
             {/* says what's missing instead of sitting there disabled with no reason */}
             <GlassButton
-              label={!club ? 'Select a Club' : lie ? 'Save Shot' : 'Pick a Lie'}
+              label={
+                !club ? 'Select a Club' : !lie ? 'Pick an End Lie' : editing ? 'Save Changes' : 'Save Shot'
+              }
               disabled={!club || !lie}
+              style={styles.save}
               onPress={() => {
                 if (!club || !lie) return;
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                onSave(club, lie);
+                onSave(club, startLie, lie);
               }}
             />
           </View>
-        </Animated.View>
+        </View>
       )}
     </Animated.View>
+  );
+}
+
+/** A titled row of the six lies as round buttons. */
+function LieRow({ title, value, onPick }: { title: string; value: Lie | null; onPick: (l: Lie) => void }) {
+  const c = useTheme();
+  return (
+    <View style={styles.lieRow}>
+      <Text style={[styles.detailsTitle, { color: c.text }]}>{title}</Text>
+      <View style={styles.lies}>
+        {LIE_ORDER.map((l) => {
+          const selected = l === value;
+          const fg = selected ? Selected.text : c.text;
+          return (
+            <Pressable
+              key={l}
+              accessibilityRole="button"
+              accessibilityLabel={`${title}: ${label(l)}`}
+              accessibilityState={{ selected }}
+              onPress={() => {
+                Haptics.selectionAsync();
+                onPick(l);
+              }}
+              style={styles.lie}
+            >
+              <View style={[styles.lieCircle, selected ? styles.selected : { backgroundColor: c.fill }]}>
+                {LIE_LETTERS[l] ? (
+                  <Text style={[styles.lieLetter, { color: fg }]}>{LIE_LETTERS[l]}</Text>
+                ) : (
+                  <SymbolView
+                    name={{ ios: 'arrow.triangle.2.circlepath', android: 'sync', web: 'sync' }}
+                    size={18}
+                    weight="semibold"
+                    tintColor={fg}
+                  />
+                )}
+              </View>
+              <Text style={[styles.lieLabel, { color: c.text }, selected && styles.lieLabelSelected]}>
+                {label(l)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -296,15 +347,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  actions: { flexDirection: 'row', gap: Spacing.two },
+  delete: {
+    width: 58,
+    height: 58,
+    borderRadius: Radius.xl,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deletePressed: { opacity: 0.6 },
+  save: { flex: 1 },
   wheel: { marginHorizontal: Spacing.three, overflow: 'hidden' },
   wheelTuck: { marginTop: -WHEEL_TOP_TUCK },
-  details: { paddingHorizontal: INSET, paddingTop: Spacing.three, gap: Spacing.three },
+  details: { paddingHorizontal: INSET, paddingTop: Spacing.two, gap: Spacing.three },
+  lieRows: { gap: Spacing.three },
+  lieRow: { gap: Spacing.two },
   detailsTitle: { ...Type.headline },
-  lies: { flexDirection: 'row', justifyContent: 'space-between' },
-  lie: { alignItems: 'center', gap: Spacing.one + Spacing.half },
+  lies: { flexDirection: 'row' },
+  // equal slots, so the two rows line up even when a selected label turns bold
+  lie: { flex: 1, alignItems: 'center', gap: Spacing.one + Spacing.half },
   lieCircle: {
-    width: 50,
-    height: 50,
+    width: 44,
+    height: 44,
     borderRadius: Radius.full,
     borderWidth: Selected.edgeWidth,
     borderColor: 'transparent',
@@ -312,7 +377,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selected: { backgroundColor: Selected.fill, borderColor: Selected.edge },
-  lieLetter: { fontSize: 20, fontWeight: '700' },
+  lieLetter: { fontSize: 18, fontWeight: '700' },
   lieLabel: { ...Type.caption, fontSize: 12 },
   lieLabelSelected: { color: Selected.text, fontWeight: '700' },
 });

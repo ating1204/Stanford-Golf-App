@@ -245,6 +245,40 @@ export function scoreToPar(round: Round, parOf: (holeNumber: number) => number):
   return scored.reduce((sum, n) => sum + (round.holes[n].score as number) - parOf(n), 0);
 }
 
+/** The numbers a finished round is summed up with; each covers only what was entered. */
+export type RoundSummary = {
+  holesScored: number;
+  holesTotal: number;
+  /** holes on the side with no score, in order */
+  missing: number[];
+  strokes: number;
+  toPar: number | null;
+  putts: number | null;
+  fairways: { hit: number; of: number };
+  greens: { hit: number; of: number };
+};
+
+export function summarizeRound(round: Round, parOf: (holeNumber: number) => number): RoundSummary {
+  const numbers = SIDE_HOLES[round.side];
+  const holes = numbers.map((n) => round.holes[n]).filter((h) => h != null);
+  const count = (vals: (string | null)[]) => {
+    const entered = vals.filter((v) => v !== null);
+    return { hit: entered.filter((v) => v === 'hit').length, of: entered.length };
+  };
+  const puttCounts = holes.map((h) => h.putts).filter((p) => p !== null);
+  const scored = holes.filter((h) => h.score !== null);
+  return {
+    holesScored: scored.length,
+    holesTotal: numbers.length,
+    missing: numbers.filter((n) => round.holes[n]?.score == null),
+    strokes: scored.reduce((sum, h) => sum + (h.score as number), 0),
+    toPar: scoreToPar(round, parOf),
+    putts: puttCounts.length > 0 ? puttCounts.reduce((sum, p) => sum + p, 0) : null,
+    fairways: count(holes.map((h) => h.fairway)),
+    greens: count(holes.map((h) => h.gir)),
+  };
+}
+
 /** "E", "+3", "−2" -- the way golfers write a score to par (a real minus sign, not a hyphen). */
 export function formatToPar(diff: number | null): string {
   if (diff === null) return '–';

@@ -52,9 +52,15 @@ export function GlassButton({
         glassEffectStyle="regular"
         tintColor={Brand.greenGlass}
         isInteractive={!disabled}
-        style={[styles.button, disabled && styles.disabled, style]}
+        style={[styles.button, style]}
       >
-        <Pressable {...a11y} disabled={disabled} onPress={onPress} style={styles.hit}>
+        {/* disabled dims the words, not the glass: iOS drops the material on a faded view */}
+        <Pressable
+          {...a11y}
+          disabled={disabled}
+          onPress={onPress}
+          style={[styles.hit, disabled && styles.disabled]}
+        >
           {text}
         </Pressable>
         {leading ? <View style={[styles.end, styles.leading]}>{leading}</View> : null}

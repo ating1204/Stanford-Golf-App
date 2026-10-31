@@ -1,4 +1,11 @@
-import { formatToPar, scoreToPar, toUploadRequest, type HoleEntry, type Round } from './round';
+import {
+  formatToPar,
+  scoreToPar,
+  summarizeRound,
+  toUploadRequest,
+  type HoleEntry,
+  type Round,
+} from './round';
 
 const empty: HoleEntry = {
   score: null,
@@ -104,5 +111,47 @@ describe('scoreToPar', () => {
     expect(formatToPar(0)).toBe('E');
     expect(formatToPar(25)).toBe('+25');
     expect(formatToPar(-2)).toBe('−2');
+  });
+});
+
+describe('summarizeRound', () => {
+  const par = (n: number) => (n === 1 ? 5 : 4);
+
+  it('lists the holes with no score', () => {
+    const round = frontNine();
+    round.holes[1] = { ...empty, score: 5 };
+    round.holes[3] = { ...empty, putts: 2 }; // stats but no score still counts as missing
+    const s = summarizeRound(round, par);
+    expect(s.holesScored).toBe(1);
+    expect(s.holesTotal).toBe(9);
+    expect(s.missing).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it('adds strokes and to-par over scored holes only', () => {
+    const round = frontNine();
+    round.holes[1] = { ...empty, score: 7 };
+    round.holes[2] = { ...empty, score: 3 };
+    const s = summarizeRound(round, par);
+    expect(s.strokes).toBe(10);
+    expect(s.toPar).toBe(1);
+  });
+
+  it('counts fairways and greens out of the ones entered', () => {
+    const round = frontNine();
+    round.holes[1] = { ...empty, fairway: 'hit', gir: 'long' };
+    round.holes[2] = { ...empty, fairway: 'left', gir: 'hit' };
+    round.holes[3] = { ...empty, fairway: 'hit' };
+    const s = summarizeRound(round, par);
+    expect(s.fairways).toEqual({ hit: 2, of: 3 });
+    expect(s.greens).toEqual({ hit: 1, of: 2 });
+  });
+
+  it('adds putts, keeping zero distinct from not entered', () => {
+    const round = frontNine();
+    expect(summarizeRound(round, par).putts).toBeNull();
+    round.holes[1] = { ...empty, putts: 0 };
+    expect(summarizeRound(round, par).putts).toBe(0);
+    round.holes[2] = { ...empty, putts: 2 };
+    expect(summarizeRound(round, par).putts).toBe(2);
   });
 });

@@ -13,6 +13,7 @@ import { MapColors, Radius, Spacing, Type } from '@/constants/theme';
 export function HoleHeader({
   holeNumber,
   toGreen,
+  targetLabel = 'Mid Green',
   par,
   teeName,
   teeYards,
@@ -23,6 +24,8 @@ export function HoleHeader({
 }: {
   holeNumber: number;
   toGreen: number | null;
+  /** names what `toGreen` measures to */
+  targetLabel?: string;
   par: number;
   teeName: string;
   teeYards: number;
@@ -73,7 +76,7 @@ export function HoleHeader({
           />
         </Pressable>
 
-        <Field label="Mid Green" value={toGreen != null ? `${toGreen}` : '—'} unit="Yds" strong />
+        <Field label={targetLabel} value={toGreen != null ? `${toGreen}` : '—'} unit="Yds" strong />
         <Field label="Par" value={`${par}`} />
         <Field label={teeName} value={`${teeYards}`} />
       </HudSurface>

@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, { Easing, LayoutAnimationConfig, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassButton } from '@/components/glass-button';
@@ -70,18 +70,25 @@ export function HoleScreen({ holeNumber, teeName }: { holeNumber: number; teeNam
   const tee = teeOf(hole, teeName);
   const green = greenOf(hole);
   const { position, accuracyM, error } = useLocation();
-  const { round, hole: holeEntry, setCurrentHole, addShot } = useRound();
+  const { round, hole: holeEntry, setCurrentHole, addShot, updateShot, removeShot } = useRound();
 
   // remembered so Resume Round brings you back here
   useEffect(() => setCurrentHole(holeNumber), [holeNumber, setCurrentHole]);
 
   const [waypoints, setWaypoints] = useState<LatLng[]>(() => defaultWaypoints(tee.position, green, hole.par));
 
-  const path = useMemo(() => [tee.position, ...waypoints, green], [tee.position, waypoints, green]);
+  // dragged spots for today's tee and pin; null = the course default
+  const [teeSpot, setTeeSpot] = useState<LatLng | null>(null);
+  const [pinSpot, setPinSpot] = useState<LatLng | null>(null);
+  const start = teeSpot ?? tee.position;
+  const pin = pinSpot ?? green;
+  const home = useMemo(() => ({ start: tee.position, end: green }), [tee.position, green]);
+
+  const path = useMemo(() => [start, ...waypoints, pin], [start, waypoints, pin]);
   // farther than this you're not on the hole (parking lot, home), so show — instead
   const MAX_SHOWN_YARDS = 1000;
 
-  const yardsToGreen = position ? Math.round(haversineYards(position, green)) : null;
+  const yardsToGreen = position ? Math.round(haversineYards(position, pin)) : null;
   const toGreen = yardsToGreen != null && yardsToGreen <= MAX_SHOWN_YARDS ? yardsToGreen : null;
   const entry = holeEntry(holeNumber);
   const shotCount = entry.shots.length;
@@ -100,12 +107,22 @@ export function HoleScreen({ holeNumber, teeName }: { holeNumber: number; teeNam
   };
   const onPickerClosed = useCallback(() => setPickerMounted(false), []);
 
-  const onMoveWaypoint = useCallback((index: number, p: LatLng) => {
-    setWaypoints((prev) => {
-      const next = [...prev];
-      next[index] = p;
-      return next;
-    });
+  const onMovePathPoint = useCallback(
+    (index: number, p: LatLng) => {
+      if (index === 0) return setTeeSpot(p);
+      if (index === waypoints.length + 1) return setPinSpot(p);
+      setWaypoints((prev) => {
+        const next = [...prev];
+        next[index - 1] = p;
+        return next;
+      });
+    },
+    [waypoints.length],
+  );
+
+  const onSnapHome = useCallback((end: 'start' | 'end') => {
+    if (end === 'start') setTeeSpot(null);
+    else setPinSpot(null);
   }, []);
 
   // --- shot tracking: two draggable pins on the map, the panel underneath ---
@@ -119,6 +136,49 @@ export function HoleScreen({ holeNumber, teeName }: { holeNumber: number; teeNam
     null,
   );
   const draft = savedDraft?.hole === holeNumber ? savedDraft : null;
+  // which logged shot the card is changing; null = tracking a new one
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const editingShot = editingIndex !== null ? entry.shots[editingIndex] : null;
+
+  // logged shots stay on the map, except the one being edited (its pins are live)
+  const savedShots = entry.shots.flatMap((s, index) =>
+    index !== editingIndex && s.startLat != null && s.startLng != null && s.endLat != null && s.endLng != null
+      ? [
+          {
+            index,
+            club: s.club,
+            start: { lat: s.startLat, lng: s.startLng },
+            end: { lat: s.endLat, lng: s.endLng },
+          },
+        ]
+      : [],
+  );
+
+  const editShot = (index: number) => {
+    const s = entry.shots[index];
+    if (s.startLat == null || s.startLng == null || s.endLat == null || s.endLng == null) return;
+    const points = { start: { lat: s.startLat, lng: s.startLng }, end: { lat: s.endLat, lng: s.endLng } };
+    setEditingIndex(index);
+    setShot(points);
+    setShotFocus([points.start, points.end]);
+  };
+
+  const closeCard = () => {
+    setShot(null);
+    setEditingIndex(null);
+  };
+
+  const deleteShot = () => {
+    if (editingIndex === null) return;
+    removeShot(holeNumber, editingIndex);
+    // the next shot now starts where the one before the deleted shot ended
+    if (entry.shots[editingIndex + 1]) {
+      updateShot(holeNumber, editingIndex, {
+        startLie: entry.shots[editingIndex - 1]?.endLie ?? 'tee',
+      });
+    }
+    closeCard();
+  };
 
   const startTracking = () => {
     if (draft) {
@@ -137,10 +197,10 @@ export function HoleScreen({ holeNumber, teeName }: { holeNumber: number; teeNam
     const fallback =
       lastShot?.endLat != null && lastShot.endLng != null
         ? { lat: lastShot.endLat, lng: lastShot.endLng }
-        : tee.position;
-    const start = meOnMap ? position! : fallback;
-    setShot({ start, end: green });
-    setShotFocus([start, green]);
+        : start;
+    const shotStart = meOnMap ? position! : fallback;
+    setShot({ start: shotStart, end: pin });
+    setShotFocus([shotStart, pin]);
   };
 
   const onMoveShot = useCallback(
@@ -150,21 +210,30 @@ export function HoleScreen({ holeNumber, teeName }: { holeNumber: number; teeNam
     [setShot],
   );
 
-  const saveShot = (club: Club, endLie: Lie) => {
+  const saveShot = (club: Club, startLie: Lie, endLie: Lie) => {
     if (!shot) return;
     // both ends are stored as distance to the green, the unit strokes gained uses
-    addShot(holeNumber, {
+    const placed = {
       club,
-      startDist: Math.round(haversineYards(shot.start, green)),
-      endDist: Math.round(haversineYards(shot.end, green)),
-      startLie: lastShot?.endLie ?? 'tee',
+      startDist: Math.round(haversineYards(shot.start, pin)),
+      endDist: Math.round(haversineYards(shot.end, pin)),
+      startLie,
       endLie,
       startLat: shot.start.lat,
       startLng: shot.start.lng,
       endLat: shot.end.lat,
       endLng: shot.end.lng,
-      penalties: 0,
-    });
+    };
+    if (editingIndex !== null) {
+      updateShot(holeNumber, editingIndex, placed);
+      // the next shot starts from wherever this one ended up
+      if (entry.shots[editingIndex + 1]) {
+        updateShot(holeNumber, editingIndex + 1, { startLie: endLie });
+      }
+      closeCard();
+      return;
+    }
+    addShot(holeNumber, { ...placed, penalties: 0 });
     setShot(null);
     setDraft(null);
   };
@@ -179,9 +248,13 @@ export function HoleScreen({ holeNumber, teeName }: { holeNumber: number; teeNam
         teeName={teeName}
         position={position}
         path={path}
-        onMoveWaypoint={onMoveWaypoint}
+        onMovePathPoint={onMovePathPoint}
+        home={home}
+        onSnapHome={onSnapHome}
         shot={shot}
         onMoveShot={onMoveShot}
+        savedShots={savedShots}
+        onEditShot={editShot}
         focus={shot ? { points: shotFocus, top: insets.top + 110, bottom: panelHeight } : null}
       />
 
@@ -209,6 +282,7 @@ export function HoleScreen({ holeNumber, teeName }: { holeNumber: number; teeNam
       <HoleHeader
         holeNumber={holeNumber}
         toGreen={toGreen}
+        targetLabel={pinSpot ? 'To Pin' : 'Mid Green'}
         par={hole.par}
         teeName={tee.name}
         teeYards={tee.yards}
@@ -226,105 +300,121 @@ export function HoleScreen({ holeNumber, teeName }: { holeNumber: number; teeNam
         </HudSurface>
       )}
 
-      {shot ? (
-        <TrackPanel
-          shotNumber={shotCount + 1}
-          yards={Math.round(haversineYards(shot.start, shot.end))}
-          onHeightChange={setPanelHeight}
-          draft={draft}
-          onSave={saveShot}
-          onCancel={() => {
-            setShot(null);
-            setDraft(null);
-          }}
-          onDismiss={(picks) => {
-            setDraft({ ...picks, hole: holeNumber, start: shot.start, end: shot.end });
-            setShot(null);
-          }}
-        />
-      ) : (
-        <Animated.View
-          entering={FadeIn.duration(260).delay(120)}
-          exiting={FadeOut.duration(140)}
-          style={[styles.bottom, { paddingBottom: insets.bottom + Spacing.two }]}
-        >
-          <HudSurface interactive style={styles.track}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={shotCount > 0 ? `Track shot, ${shotCount} tracked` : 'Track shot'}
-              onPress={startTracking}
-              style={styles.trackHit}
-            >
-              <SymbolView
-                name={{ ios: 'scope', android: 'my_location', web: 'my_location' }}
-                size={18}
-                weight="semibold"
-                tintColor={MapColors.hudText}
-              />
-              <Text style={styles.trackText}>Track Shot</Text>
-              {shotCount > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{shotCount}</Text>
-                </View>
-              )}
-            </Pressable>
-          </HudSurface>
-
-          {/* the Hole box sits dead centre; To Par is centred in the space to its left */}
-          <View style={styles.holeRow}>
-            <View style={styles.sideColumn}>
-              {/* running score against par over the holes scored so far on this nine (or 18) */}
-              <HudSurface style={styles.toParBox}>
-                <View accessible accessibilityLabel={`To par ${toPar}`} style={styles.fill}>
-                  <Text style={styles.toParLabel}>To Par</Text>
-                  <Text style={styles.toPar}>{toPar}</Text>
-                </View>
-              </HudSurface>
-            </View>
-
-            {/* the one primary action on this screen; ‹ › inside it switch holes */}
-            <GlassButton
-              label={`Hole ${holeNumber}`}
-              subtitle={entry.score != null ? `Score ${entry.score}` : 'Enter Score'}
-              accessibilityLabel={`Hole ${holeNumber}, ${entry.score != null ? `score ${entry.score}` : 'enter score'}`}
-              onPress={() => router.push(`/hole/${holeNumber}/score?tee=${teeName}`)}
-              style={[styles.enter, { width: holeBoxWidth }]}
-              leading={
-                <HoleArrow
-                  direction="left"
-                  disabled={holeNumber === firstHole}
-                  onPress={() => goTo(holeNumber - 1)}
-                />
+      {/* skipEntering: a new hole mounts with its controls in place; they only slide around the card */}
+      <LayoutAnimationConfig skipEntering>
+        {shot ? (
+          <TrackPanel
+            key={editingIndex ?? 'new'}
+            shotNumber={editingIndex !== null ? editingIndex + 1 : shotCount + 1}
+            yards={Math.round(haversineYards(shot.start, shot.end))}
+            onHeightChange={setPanelHeight}
+            defaultStartLie={lastShot?.endLie ?? 'tee'}
+            draft={
+              editingShot
+                ? { club: editingShot.club, startLie: editingShot.startLie, lie: editingShot.endLie }
+                : draft
+            }
+            editing={editingIndex !== null}
+            onSave={saveShot}
+            onDelete={editingIndex !== null ? deleteShot : undefined}
+            onCancel={() => {
+              closeCard();
+              if (editingIndex === null) setDraft(null);
+            }}
+            onDismiss={(picks) => {
+              // swiping away an edit just leaves the shot as it was
+              if (editingIndex === null) {
+                setDraft({ ...picks, hole: holeNumber, start: shot.start, end: shot.end });
               }
-              trailing={
-                <HoleArrow
-                  direction="right"
-                  disabled={holeNumber === lastHole}
-                  onPress={() => goTo(holeNumber + 1)}
+              closeCard();
+            }}
+          />
+        ) : (
+          <Animated.View
+            // slides, never fades: iOS drops the glass material inside a fading view, which
+            // left these boxes without their backgrounds after switching holes
+            entering={SlideInDown.duration(320).easing(Easing.out(Easing.cubic))}
+            exiting={SlideOutDown.duration(200).easing(Easing.in(Easing.cubic))}
+            style={[styles.bottom, { paddingBottom: insets.bottom + Spacing.two }]}
+          >
+            <HudSurface interactive style={styles.track}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={shotCount > 0 ? `Track shot, ${shotCount} tracked` : 'Track shot'}
+                onPress={startTracking}
+                style={styles.trackHit}
+              >
+                <SymbolView
+                  name={{ ios: 'scope', android: 'my_location', web: 'my_location' }}
+                  size={18}
+                  weight="semibold"
+                  tintColor={MapColors.hudText}
                 />
-              }
-            />
-            <View style={styles.sideColumn}>
-              {/* mirrors To Par on the right; notes per hole are coming later */}
-              <HudSurface interactive style={styles.toParBox}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Notes, coming soon"
-                  onPress={() => Alert.alert('Notes', 'Hole notes are coming soon.')}
-                  style={styles.fill}
-                >
-                  <SymbolView
-                    name={{ ios: 'note.text', android: 'sticky_note_2', web: 'sticky_note_2' }}
-                    size={22}
-                    weight="semibold"
-                    tintColor={MapColors.hudText}
+                <Text style={styles.trackText}>Track Shot</Text>
+                {shotCount > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{shotCount}</Text>
+                  </View>
+                )}
+              </Pressable>
+            </HudSurface>
+
+            {/* the Hole box sits dead centre; To Par is centred in the space to its left */}
+            <View style={styles.holeRow}>
+              <View style={styles.sideColumn}>
+                {/* running score against par over the holes scored so far on this nine (or 18) */}
+                <HudSurface style={styles.toParBox}>
+                  <View accessible accessibilityLabel={`To par ${toPar}`} style={styles.fill}>
+                    <Text style={styles.toParLabel}>To Par</Text>
+                    <Text style={styles.toPar}>{toPar}</Text>
+                  </View>
+                </HudSurface>
+              </View>
+
+              {/* the one primary action on this screen; ‹ › inside it switch holes */}
+              <GlassButton
+                label={`Hole ${holeNumber}`}
+                subtitle={entry.score != null ? `Score ${entry.score}` : 'Enter Score'}
+                accessibilityLabel={`Hole ${holeNumber}, ${entry.score != null ? `score ${entry.score}` : 'enter score'}`}
+                onPress={() => router.push(`/hole/${holeNumber}/score?tee=${teeName}`)}
+                style={[styles.enter, { width: holeBoxWidth }]}
+                leading={
+                  <HoleArrow
+                    direction="left"
+                    disabled={holeNumber === firstHole}
+                    onPress={() => goTo(holeNumber - 1)}
                   />
-                </Pressable>
-              </HudSurface>
+                }
+                trailing={
+                  <HoleArrow
+                    direction="right"
+                    disabled={holeNumber === lastHole}
+                    onPress={() => goTo(holeNumber + 1)}
+                  />
+                }
+              />
+              <View style={styles.sideColumn}>
+                {/* mirrors To Par on the right; notes per hole are coming later */}
+                <HudSurface interactive style={styles.toParBox}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Notes, coming soon"
+                    onPress={() => Alert.alert('Notes', 'Hole notes are coming soon.')}
+                    style={styles.fill}
+                  >
+                    <SymbolView
+                      name={{ ios: 'note.text', android: 'sticky_note_2', web: 'sticky_note_2' }}
+                      size={22}
+                      weight="semibold"
+                      tintColor={MapColors.hudText}
+                    />
+                  </Pressable>
+                </HudSurface>
+              </View>
             </View>
-          </View>
-        </Animated.View>
-      )}
+          </Animated.View>
+        )}
+      </LayoutAnimationConfig>
     </View>
   );
 }

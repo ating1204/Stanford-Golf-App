@@ -3,8 +3,8 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { Radius, Type } from '@/constants/theme';
 
-const OUTER = 44;
-const GAP = 4; // between the two rings of a double circle/square
+// `gap` is the space between the two rings of a double circle/square
+const SIZES = { regular: { outer: 44, gap: 4 }, small: { outer: 27, gap: 2.5 } } as const;
 
 /**
  * A score drawn the way it's marked on a paper scorecard, relative to par:
@@ -17,6 +17,7 @@ export function ScoreMark({
   color,
   lineColor,
   label,
+  size = 'regular',
 }: {
   score: number;
   par: number;
@@ -24,12 +25,17 @@ export function ScoreMark({
   lineColor: string;
   /** shown instead of the number (e.g. "?"), still framed as `score` would be */
   label?: string;
+  /** `small` fits a scorecard row: smaller marks, and par stays a plain number */
+  size?: keyof typeof SIZES;
 }) {
+  const { outer, gap } = SIZES[size];
+  const small = size === 'small';
   const diff = score - par;
   const round = diff < 0;
   const double = Math.abs(diff) >= 2;
-  const text = <Text style={[styles.number, { color }]}>{label ?? score}</Text>;
+  const text = <Text style={[small ? styles.smallNumber : styles.number, { color }]}>{label ?? score}</Text>;
 
+  if (diff === 0 && small) return text;
   if (diff === 0) {
     // same box as a single ring, so the number sits on the same line as its neighbours;
     // "Par" hangs underneath without pushing the number up
@@ -41,28 +47,34 @@ export function ScoreMark({
     );
   }
 
-  const ring = (size: number, children: ReactNode) => (
+  const ring = (ringSize: number, children: ReactNode) => (
     <View
       style={[
         styles.ring,
-        { width: size, height: size, borderColor: lineColor, borderRadius: round ? Radius.full : 2 },
+        { width: ringSize, height: ringSize, borderColor: lineColor, borderRadius: round ? Radius.full : 2 },
       ]}
     >
       {children}
     </View>
   );
 
-  return double ? ring(OUTER, ring(OUTER - GAP * 2, text)) : ring(OUTER - GAP, text);
+  return double ? ring(outer, ring(outer - gap * 2, text)) : ring(outer - gap, text);
 }
 
 const styles = StyleSheet.create({
   ring: { borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   number: { ...Type.title, fontVariant: ['tabular-nums'] },
-  par: { width: OUTER - GAP, height: OUTER - GAP, alignItems: 'center', justifyContent: 'center' },
+  smallNumber: { ...Type.footnote, fontSize: 14, fontVariant: ['tabular-nums'] },
+  par: {
+    width: SIZES.regular.outer - SIZES.regular.gap,
+    height: SIZES.regular.outer - SIZES.regular.gap,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   parLabel: {
     ...Type.caption,
     position: 'absolute',
-    top: OUTER - GAP - 3,
+    top: SIZES.regular.outer - SIZES.regular.gap - 3,
     fontSize: 11,
     lineHeight: 13,
     fontWeight: '600',

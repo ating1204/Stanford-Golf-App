@@ -26,7 +26,6 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="hole/[n]" />
-          {/* placeholder for now; the full scorecard comes later */}
           <Stack.Screen name="scorecard" options={{ presentation: 'modal' }} />
         </Stack>
         </RoundProvider>
